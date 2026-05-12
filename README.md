@@ -1,8 +1,10 @@
 <div align="center">
 
-# Threat Hunting Arsenal
+<img src="https://capsule-render.vercel.app/api?type=waving&color=0:0F2027,50:203A43,100:8B0000&height=230&section=header&text=Threat%20Hunting%20Arsenal&fontSize=54&fontColor=ffffff&fontAlignY=38&desc=Hypotheses%20%C2%B7%20Detections%20%C2%B7%20Rules%20%C2%B7%20Resources&descSize=18&descAlignY=60&animation=fadeIn" alt="Threat Hunting Arsenal banner" />
 
-### Hypotheses · Detections · Rules · Notes · Resources
+<img src="https://readme-typing-svg.demolab.com?font=Fira+Code&weight=600&size=22&duration=3500&pause=800&color=E63946&center=true&vCenter=true&width=720&lines=Proactive+defense%2C+one+hypothesis+at+a+time.;ELK-first.+ATT%26CK-aligned.+Open+notebook.;%22What+would+I+see+if+the+adversary+were+here+right+now%3F%22" alt="Animated tagline" />
+
+<br/><br/>
 
 *A living library for proactive defense — built around the ELK stack, MITRE ATT&CK, and the discipline of asking "what would I see if the adversary were already inside?"*
 
