@@ -1,0 +1,78 @@
+# ---------------------------------------------------------------------------
+# Threat Hunting Hypothesis
+# Copy this file, rename to H-XXX-short-slug.yml, drop into the tactic folder.
+# Every field is required. Use "unknown" rather than removing fields.
+# ---------------------------------------------------------------------------
+
+id: H-XXX
+title: Short, falsifiable statement of what you expect to see
+
+# ATT&CK alignment
+tactic: TA0XXX           # e.g. TA0003
+technique: TXXXX         # e.g. T1546.003
+sub_technique:           # e.g. .003 — leave blank if N/A
+
+# Lifecycle
+status: Draft            # Draft | Hunting | Productionized | Retired
+author: v3nomtech
+created: 2026-05-12
+last_updated: 2026-05-12
+
+# Confidence & priority
+confidence: Medium       # Low | Medium | High
+priority: P3             # P1 (critical) … P4 (curiosity hunt)
+
+# Telemetry needed to run the hunt
+data_sources:
+  - Sysmon (Event ID 1, 3)
+  - Windows Security Log (4688)
+  - EDR process telemetry
+
+# The actual hypothesis — make it falsifiable
+hypothesis: |
+  If an adversary is using <technique>, we should observe <specific signal>
+  in <data source> within <time window>. Absence of this signal does not
+  prove safety — but presence warrants investigation.
+
+# Query / analytic that operationalizes the hypothesis
+hunt_query:
+  language: ESQL         # ESQL | EQL | KQL | SPL | YARA-L
+  query: |
+    FROM logs-*
+    | WHERE event.category == "process"
+    | ...
+
+# What we expect to see in a clean environment
+expected_results: |
+  Describe baseline. e.g. "5-20 events/day, exclusively from
+  SCCM service accounts during patch windows."
+
+# Known false positives — list them up front
+known_false_positives:
+  - Patch management tools (SCCM, BigFix)
+  - Vulnerability scanners
+  - Admin troubleshooting
+
+# Pivots to try when something hits
+pivots:
+  - Parent process tree
+  - User logon session
+  - Network connections from same host in 1h window
+  - File creations by the suspect process
+
+# Outcome of past hunts (append-only log)
+hunt_log:
+  - date: 2026-05-12
+    outcome: Baseline established. 0 anomalies.
+    notes: |
+      Add tuning notes here.
+
+# References that inspired or inform this hunt
+references:
+  - https://attack.mitre.org/techniques/TXXXX/
+  - https://thedfirreport.com/...
+  - https://elastic.co/security-labs/...
+
+# If this hypothesis graduates into a detection, link the rule here
+graduated_to:
+  # - rules/elastic/short-slug.toml

@@ -1,0 +1,77 @@
+id: H-013
+title: Volume Shadow Copy deletion via vssadmin, wmic, or PowerShell
+
+tactic: TA0040
+technique: T1490
+sub_technique:
+
+status: Productionized
+author: v3nomtech
+created: 2026-03-15
+last_updated: 2026-04-30
+
+confidence: High
+priority: P1
+
+data_sources:
+  - Sysmon (Event ID 1)
+  - Windows Security Log (4688)
+  - EDR process telemetry
+
+hypothesis: |
+  If ransomware (or a pre-encryption stager) is preparing to encrypt
+  (T1490 — Inhibit System Recovery), we will see one of a small set of
+  highly-specific command lines run to delete shadow copies. There is
+  almost no legitimate reason for these to fire on a user endpoint;
+  they are most often legitimate only on backup servers running scripted
+  maintenance.
+
+hunt_query:
+  language: EQL
+  query: |
+    process where event.type == "start"
+      and (
+        (process.name : "vssadmin.exe"
+          and process.command_line : "*delete*shadow*")
+        or (process.name : ("wmic.exe", "WMIC.exe")
+          and process.command_line : "*shadowcopy*delete*")
+        or (process.name : ("powershell.exe", "pwsh.exe")
+          and process.command_line : "*Get-WmiObject*Win32_ShadowCopy*Delete*")
+        or (process.name : "wbadmin.exe"
+          and process.command_line : "*delete*catalog*")
+      )
+
+expected_results: |
+  Near-zero on a user-endpoint estate. ~1-2 events/day on backup /
+  server tier from scheduled maintenance jobs (allowlist by host role).
+
+known_false_positives:
+  - Backup servers running scheduled shadow-copy cleanup (allowlist by host role)
+  - Some disk-imaging / migration tools (Acronis, MDT) during refresh windows
+  - Sysadmin manual cleanup — should still alert and be confirmed by ticket
+
+pivots:
+  - Host role — is this a workstation or a backup server?
+  - Parent process — script? interactive shell? unexpected service?
+  - File-write activity in the surrounding 5 minutes (encryption staging?)
+  - Were Windows Defender exclusions added shortly before?
+  - Did any new persistence get installed in the prior 24h?
+
+hunt_log:
+  - date: 2026-03-15
+    outcome: Baseline established. 0 events on workstation tier.
+    notes: Allowlisted 4 backup hosts.
+  - date: 2026-03-29
+    outcome: 1 true positive — purple team detonating LockBit-like sample.
+    notes: Fired in <5s. Containment SLA met.
+  - date: 2026-04-30
+    outcome: Graduated to production detection.
+    notes: Severity = High. Pages oncall immediately on workstation tier.
+
+references:
+  - https://attack.mitre.org/techniques/T1490/
+  - https://www.elastic.co/security-labs/ransomware-in-the-honeymoon-period
+  - https://redcanary.com/threat-detection-report/techniques/inhibit-system-recovery/
+
+graduated_to:
+  - rules/elastic/shadow-copy-deletion.toml

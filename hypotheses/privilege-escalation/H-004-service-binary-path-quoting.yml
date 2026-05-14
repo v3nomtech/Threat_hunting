@@ -1,0 +1,69 @@
+id: H-004
+title: Unquoted service binary path created by non-admin user
+
+tactic: TA0004
+technique: T1574
+sub_technique: .009
+
+status: Draft
+author: v3nomtech
+created: 2026-05-02
+last_updated: 2026-05-02
+
+confidence: Medium
+priority: P3
+
+data_sources:
+  - Windows Security Log (4697 — service installed)
+  - Sysmon (Event ID 13 — registry value set under Services\)
+  - EDR registry telemetry
+
+hypothesis: |
+  If an adversary is staging unquoted-service-path privilege escalation
+  (T1574.009), we should observe a write to
+  HKLM\SYSTEM\CurrentControlSet\Services\<name>\ImagePath where:
+    - the value contains spaces and is NOT wrapped in double quotes, AND
+    - the writing process is not run as SYSTEM via a known installer
+      (msiexec, TrustedInstaller, SetupHost).
+  This is the staging step — actual escalation only occurs if a writable
+  directory exists on the path, which is the pivot.
+
+hunt_query:
+  language: EQL
+  query: |
+    registry where event.action == "modification"
+      and registry.path : "HKLM\\SYSTEM\\CurrentControlSet\\Services\\*\\ImagePath"
+      and registry.data.strings : "* *"
+      and not registry.data.strings : "\"*"
+      and not process.name : ("msiexec.exe", "TrustedInstaller.exe", "SetupHost.exe")
+
+expected_results: |
+  Unknown — this is a Draft hypothesis. Initial baseline run pending.
+  Expectation: <5 events/day in a clean estate; most will be legacy
+  installers from 3rd-party vendors.
+
+known_false_positives:
+  - Legacy 3rd-party installers (older Java, some printer drivers)
+  - Custom in-house service deployers run by SCCM
+  - Vendor patches that re-register a service with the original (unquoted) path
+
+pivots:
+  - icacls on each directory in the path — is any writable by non-admins?
+  - Process that performed the write — was it elevated?
+  - Was the service ever started after this write?
+  - Did any new files appear in the parent directory of the binary in the next 24h?
+
+hunt_log:
+  - date: 2026-05-02
+    outcome: Hypothesis drafted. Baseline run scheduled for next sprint.
+    notes: |
+      Need to coordinate with desktop engineering — they push a handful of
+      services and we should allowlist before going live.
+
+references:
+  - https://attack.mitre.org/techniques/T1574/009/
+  - https://pentestlab.blog/2017/03/09/unquoted-service-path/
+  - https://www.commonexploits.com/unquoted-service-paths/
+
+graduated_to:
+  # - rules/elastic/unquoted-service-path-write.toml

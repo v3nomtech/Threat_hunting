@@ -1,0 +1,69 @@
+id: H-010
+title: Long-running process polling the clipboard via repeated OpenClipboard calls
+
+tactic: TA0009
+technique: T1115
+sub_technique:
+
+status: Draft
+author: v3nomtech
+created: 2026-05-04
+last_updated: 2026-05-04
+
+confidence: Low
+priority: P4
+
+data_sources:
+  - EDR API-call telemetry (vendor-specific — needs OpenClipboard hook)
+  - Sysmon (Event ID 1) for the process baseline
+  - Windows Security Log (4688)
+
+hypothesis: |
+  If an adversary is monitoring the clipboard for credentials, wallet
+  addresses, or session tokens (T1115), we should observe a non-baseline
+  process making repeated OpenClipboard / GetClipboardData calls at
+  short intervals (sub-second to a few seconds) over a sustained period
+  (>10 minutes). Legitimate clipboard managers do this — but they are a
+  small, known set.
+
+hunt_query:
+  language: EQL
+  query: |
+    # Pseudo-query — depends on EDR exposing API-level telemetry
+    api where api.name in ("OpenClipboard", "GetClipboardData")
+      and not process.name in ("ditto.exe", "clipx.exe", "1password.exe",
+                               "bitwarden.exe", "explorer.exe",
+                               "RuntimeBroker.exe")
+      | stats call_count by process.executable, host.id, 10m
+      | where call_count > 100
+
+expected_results: |
+  Unknown — Draft. Suspect very low rate once known clipboard managers
+  are excluded. Most malware that monitors clipboard does so via
+  AddClipboardFormatListener instead, which is a separate hunt.
+
+known_false_positives:
+  - Legitimate clipboard managers (Ditto, ClipX, 1Password, Bitwarden)
+  - Remote-desktop clients (some poll the clipboard for sync)
+  - IDEs and editors with clipboard history features
+
+pivots:
+  - Network behavior of the suspect process
+  - File writes in the same window — clipboard contents being staged?
+  - Parent process tree
+  - Code signing — is the suspect binary signed and by whom?
+
+hunt_log:
+  - date: 2026-05-04
+    outcome: Drafted. Pending EDR API-telemetry confirmation.
+    notes: |
+      May need to fall back to the AddClipboardFormatListener variant if
+      raw API events are not available.
+
+references:
+  - https://attack.mitre.org/techniques/T1115/
+  - https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-openclipboard
+  - https://redcanary.com/blog/clipboard-stealing-malware/
+
+graduated_to:
+  # - rules/elastic/clipboard-polling-process.toml

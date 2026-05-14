@@ -1,0 +1,72 @@
+# Elastic Detection Rule
+# Graduated from hypotheses/persistence/H-001-wmi-event-subscription.yml
+
+[metadata]
+creation_date = "2026/05/01"
+maturity = "production"
+updated_date = "2026/05/01"
+origin_hypothesis = "H-001"
+
+[rule]
+author = ["v3nomtech"]
+description = """
+Detects creation of WMI __EventFilter, __EventConsumer, or
+__FilterToConsumerBinding objects by a process outside the small baseline
+of legitimate WMI subscription creators. WMI event subscriptions are a
+well-documented persistence mechanism (T1546.003) and are rarely created
+by interactive shells or scripting hosts in benign workflows.
+"""
+from = "now-9m"
+index = ["logs-endpoint.events.*", "winlogbeat-*"]
+language = "eql"
+license = "MIT"
+name = "WMI event subscription created by non-baseline process"
+risk_score = 73
+severity = "high"
+type = "eql"
+
+confidence = "High"
+expected_noise = "0-2 alerts/day per 1k endpoints after baseline tuning"
+
+query = '''
+sequence by host.id with maxspan=5m
+  [process where event.type == "start" and
+    process.name in ("powershell.exe", "pwsh.exe", "wmic.exe",
+                     "cscript.exe", "wscript.exe", "mshta.exe")]
+  [registry where event.action == "modification" and
+    registry.path like "*\\Software\\Microsoft\\Wbem\\CIMOM\\*"]
+'''
+
+[[rule.threat]]
+framework = "MITRE ATT&CK"
+
+  [rule.threat.tactic]
+  id = "TA0003"
+  name = "Persistence"
+  reference = "https://attack.mitre.org/tactics/TA0003/"
+
+  [[rule.threat.technique]]
+  id = "T1546"
+  name = "Event Triggered Execution"
+  reference = "https://attack.mitre.org/techniques/T1546/"
+
+    [[rule.threat.technique.subtechnique]]
+    id = "T1546.003"
+    name = "Windows Management Instrumentation Event Subscription"
+    reference = "https://attack.mitre.org/techniques/T1546/003/"
+
+[rule.false_positives]
+known = [
+  "SCCM client (ccmexec.exe) creating health-check subscriptions",
+  "EDR / DLP agents installing their own consumers at deploy time",
+  "Admin-run PowerShell scripts auditing WMI subscriptions",
+]
+
+[rule.investigation_fields]
+field_names = [
+  "process.parent.name",
+  "process.command_line",
+  "user.name",
+  "host.name",
+  "registry.data.strings",
+]

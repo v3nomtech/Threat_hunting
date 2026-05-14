@@ -1,0 +1,71 @@
+id: H-012
+title: Executable launched from a mounted ISO / IMG / VHD container
+
+tactic: TA0001
+technique: T1566
+sub_technique: .001
+
+status: Hunting
+author: v3nomtech
+created: 2026-04-08
+last_updated: 2026-05-03
+
+confidence: High
+priority: P1
+
+data_sources:
+  - Sysmon (Event ID 1 — process create, Event ID 11 — file create)
+  - Windows Security Log (4688)
+  - EDR process + mount telemetry
+
+hypothesis: |
+  If a phishing payload is delivered via container files (T1566.001 —
+  ISO / IMG / VHD bypassing Mark-of-the-Web), we should observe a
+  process launching from a drive letter that maps to a recently-mounted
+  container, with a parent of explorer.exe (user double-clicked) and a
+  file path matching the typical container-mount pattern
+  (`\Device\CdRom*`, `\Device\HarddiskVolume*` outside the system disks).
+
+hunt_query:
+  language: EQL
+  query: |
+    process where event.type == "start"
+      and process.parent.name : "explorer.exe"
+      and (
+        process.executable regex~ "^[D-Z]:\\\\.+\\.(exe|lnk|js|hta|bat|cmd|vbs|wsf|ps1|scr)$"
+        or process.executable : "\\Device\\CdRom*"
+      )
+      and not process.executable : ("C:\\*", "\\Device\\HarddiskVolume[12]\\*")
+
+expected_results: |
+  ~1-5 events/day per 1k endpoints. Most legitimate noise: IT staff
+  mounting ISO images for VM installs, software vendors shipping ISO
+  installers, and forensic / IR tooling.
+
+known_false_positives:
+  - IT mounting Windows / Linux installer ISOs for VM builds
+  - Vendor software delivered as ISO (some Oracle / Cisco installers)
+  - Forensic tools mounted from read-only images
+  - Cloud-init / virtual appliances
+
+pivots:
+  - Where did the container come from? (browser download? email attachment?)
+  - Mark-of-the-Web on the container file itself
+  - Email logs — was there a recent attachment to the user?
+  - Network egress from the launched process
+
+hunt_log:
+  - date: 2026-04-08
+    outcome: Baseline established. Allowlisted IT VM-build workstations.
+    notes: Significant signal — caught 2 phishing tests in the first week.
+  - date: 2026-05-03
+    outcome: 1 true positive — Qakbot-style ISO with embedded LNK + JS.
+    notes: Detection fired at process-create. User reported the email too.
+
+references:
+  - https://attack.mitre.org/techniques/T1566/001/
+  - https://redcanary.com/blog/iso-files-and-malware/
+  - https://www.elastic.co/security-labs/qbot-malware-analysis
+
+graduated_to:
+  # - rules/elastic/iso-container-execution.toml

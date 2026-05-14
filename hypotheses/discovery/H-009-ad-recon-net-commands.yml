@@ -1,0 +1,74 @@
+id: H-009
+title: Burst of AD reconnaissance commands from a single host within a short window
+
+tactic: TA0007
+technique: T1087
+sub_technique: .002
+
+status: Hunting
+author: v3nomtech
+created: 2026-04-20
+last_updated: 2026-05-05
+
+confidence: Medium
+priority: P3
+
+data_sources:
+  - Sysmon (Event ID 1)
+  - Windows Security Log (4688 + command line)
+  - EDR process telemetry
+
+hypothesis: |
+  If an adversary has landed on a host and is enumerating Active Directory
+  (T1087.002), we should observe ≥4 distinct discovery commands within a
+  5-minute window from the same host and user. Typical set:
+  `net group "Domain Admins" /domain`, `net user /domain`,
+  `nltest /dclist:`, `whoami /groups`, `systeminfo`, `ipconfig /all`,
+  `quser`, and similar. Individually noisy; the BURST is the signal.
+
+hunt_query:
+  language: ESQL
+  query: |
+    FROM logs-endpoint.events.process-*
+    | WHERE event.type == "start"
+      AND process.name IN ("net.exe", "net1.exe", "nltest.exe",
+                           "whoami.exe", "systeminfo.exe",
+                           "ipconfig.exe", "quser.exe", "dsquery.exe",
+                           "tasklist.exe", "arp.exe")
+    | STATS distinct_cmds = COUNT_DISTINCT(process.name),
+            total = COUNT(*)
+        BY host.name, user.name, BUCKET(@timestamp, 5m)
+    | WHERE distinct_cmds >= 4
+
+expected_results: |
+  ~3-8 hits/day per 1k endpoints. Heaviest noise: IT helpdesk troubleshooting
+  scripts, asset inventory tools, login-script audits.
+
+known_false_positives:
+  - Helpdesk troubleshooting scripts (collect-info batch files)
+  - Asset / inventory tools (lansweeper, etc.)
+  - Logon scripts that gather environment for reporting
+  - Some MDM / EDR agents during initial host enrollment
+
+pivots:
+  - Was the user logged on interactively or via a remote session?
+  - Parent process of the discovery commands (cmd.exe? script? mshta?)
+  - File writes to %TEMP% in the surrounding window
+  - Subsequent network connections to internal-only resources (DCs, file servers)
+
+hunt_log:
+  - date: 2026-04-20
+    outcome: Baseline established. Allowlisted 2 helpdesk scripts.
+    notes: |
+      Raised threshold from 3 → 4 distinct commands to suppress logon-script noise.
+  - date: 2026-05-05
+    outcome: 0 anomalies. Holding at current threshold.
+    notes: ""
+
+references:
+  - https://attack.mitre.org/techniques/T1087/002/
+  - https://redcanary.com/threat-detection-report/techniques/account-discovery/
+  - https://www.sans.org/posters/hunt-evil/
+
+graduated_to:
+  # - rules/elastic/ad-recon-command-burst.toml

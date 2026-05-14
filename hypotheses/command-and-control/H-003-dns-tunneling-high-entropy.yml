@@ -1,0 +1,73 @@
+id: H-003
+title: DNS tunneling via long, high-entropy subdomains
+
+tactic: TA0011
+technique: T1071
+sub_technique: .004
+
+status: Hunting
+author: v3nomtech
+created: 2026-03-22
+last_updated: 2026-05-08
+
+confidence: Medium
+priority: P3
+
+data_sources:
+  - Zeek dns.log (or Packetbeat dns events)
+  - Elastic Network Packet Capture
+  - Internal recursive resolver query logs
+
+hypothesis: |
+  If an adversary is using DNS as a C2 or exfiltration channel (T1071.004),
+  we should observe queries where the leftmost label is unusually long
+  (>30 chars) AND has high Shannon entropy (>3.5), repeating against the
+  same parent domain over a short window. The combination of length +
+  entropy + repetition discriminates from legitimate CDN / cloud subdomains.
+
+hunt_query:
+  language: ESQL
+  query: |
+    FROM logs-network.dns-*
+    | WHERE event.category == "network" AND dns.question.type == "TXT"
+    | EVAL leftmost = SPLIT(dns.question.name, ".")
+    | EVAL label_len = LENGTH(MV_FIRST(leftmost))
+    | WHERE label_len > 30
+    | STATS query_count = COUNT(*) BY dns.question.registered_domain, source.ip
+    | WHERE query_count > 50
+    | SORT query_count DESC
+
+expected_results: |
+  In a 1k-endpoint estate: 0-2 hits/day. CDN traffic (cloudfront, akamai,
+  fastly) typically uses shorter, lower-entropy labels. AV / EDR cloud
+  lookups DO produce long labels but are signed and consistent — those go
+  on the allowlist.
+
+known_false_positives:
+  - AV / EDR cloud reputation lookups (Defender ATP, CrowdStrike)
+  - DNSSEC validator queries
+  - Some CDN signed-URL patterns
+  - Spamhaus / DNSBL lookups from mail relays
+
+pivots:
+  - Parent registered domain — pivot to all queries against it
+  - source.ip — what process generated the query (correlate to endpoint telemetry)
+  - Outbound HTTP/HTTPS to the same domain (often there is none for DNS-only C2)
+  - WHOIS / passive DNS age of the parent domain
+  - JA3 / TLS fingerprint if any TCP traffic exists
+
+hunt_log:
+  - date: 2026-03-22
+    outcome: Baseline established. Top noise sources: defender ATP, cloudflare.
+    notes: Built allowlist of 14 parent domains.
+  - date: 2026-04-15
+    outcome: 1 suspect — analyst training lab running iodine. Confirmed benign.
+    notes: Detection logic worked end-to-end against a real tool.
+
+references:
+  - https://attack.mitre.org/techniques/T1071/004/
+  - https://www.sans.org/white-papers/34152/  # Detecting DNS Tunneling
+  - https://github.com/yarrick/iodine
+
+graduated_to:
+  # - rules/elastic/dns-tunneling-entropy.toml

@@ -1,0 +1,70 @@
+id: H-006
+title: rundll32 invoked with a non-standard export or DLL path
+
+tactic: TA0002
+technique: T1218
+sub_technique: .011
+
+status: Hunting
+author: v3nomtech
+created: 2026-04-05
+last_updated: 2026-05-09
+
+confidence: Medium
+priority: P3
+
+data_sources:
+  - Sysmon (Event ID 1 — process creation)
+  - Windows Security Log (4688 with command line auditing)
+  - EDR process + module-load telemetry
+
+hypothesis: |
+  If an adversary is using rundll32.exe as a signed proxy (T1218.011),
+  we should observe rundll32.exe with a command line that either:
+    (a) references a DLL outside %SystemRoot% / %ProgramFiles%, OR
+    (b) calls a non-standard export name (anything other than the small
+        set of legitimate ones — DllRegisterServer, FileProtocolHandler,
+        OpenURL, PrintUIEntry, ShellExec_RunDLL, etc.).
+
+hunt_query:
+  language: EQL
+  query: |
+    process where event.type == "start"
+      and process.name : "rundll32.exe"
+      and (
+        process.command_line : ("*\\AppData\\*", "*\\Temp\\*", "*\\Users\\Public\\*")
+        or process.command_line regex~ ".*,[A-Za-z0-9_]{1,3}(\\s|$).*"
+        or process.command_line : "*javascript:*"
+      )
+
+expected_results: |
+  ~5-15 events/day per 1k endpoints. Largest noise: legitimate control
+  panel applets, printer setup, and some MSI uninstallers.
+
+known_false_positives:
+  - Control panel applets invoked via shell32.dll,Control_RunDLL
+  - Printer / scanner setup utilities
+  - Some legitimate uninstallers using advpack.dll
+  - Microsoft Office repair flows
+
+pivots:
+  - Parent process — Office macro? Browser? Explorer?
+  - File path of the loaded DLL — recently created? signed?
+  - Network egress in the 5 minutes after launch
+  - Child processes of rundll32 (it shouldn't normally spawn anything)
+
+hunt_log:
+  - date: 2026-04-05
+    outcome: Baseline established. Allowlisted 6 legitimate command lines.
+    notes: Heavy noise from a printer driver — vendor was contacted.
+  - date: 2026-05-09
+    outcome: 1 true positive — phishing payload using rundll32 + javascript: URL.
+    notes: Detection fired at process-create; analyst contained in 12 min.
+
+references:
+  - https://attack.mitre.org/techniques/T1218/011/
+  - https://lolbas-project.github.io/lolbas/Binaries/Rundll32/
+  - https://www.trustedsec.com/blog/abusing-rundll32-exe/
+
+graduated_to:
+  # - rules/elastic/rundll32-suspicious-export.toml

@@ -1,0 +1,51 @@
+title: LSASS handle access from unusual parent process
+id: 3e7c8a14-9b0d-4f2c-8a7c-1d5f8c2e9b41
+status: experimental
+description: |
+  Detects a process opening a handle to lsass.exe with a memory-read /
+  query-information access mask, where the calling process is not on
+  the small baseline of legitimate Windows internals and EDR agents.
+  Credential dumping via direct LSASS handle access (T1003.001) is a
+  primary indicator of credential-theft staging.
+references:
+  - https://attack.mitre.org/techniques/T1003/001/
+  - https://github.com/v3nomtech/Threat_hunting/blob/main/hypotheses/credential-access/H-002-lsass-access-unusual-parent.yml
+author: v3nomtech
+date: 2026/05/10
+modified: 2026/05/10
+tags:
+  - attack.credential_access
+  - attack.t1003
+  - attack.t1003.001
+logsource:
+  category: process_access
+  product: windows
+detection:
+  selection:
+    TargetImage|endswith: '\lsass.exe'
+    GrantedAccess:
+      - '0x1010'
+      - '0x1410'
+      - '0x143A'
+      - '0x1438'
+  filter_baseline:
+    SourceImage|endswith:
+      - '\csrss.exe'
+      - '\wininit.exe'
+      - '\services.exe'
+      - '\MsMpEng.exe'
+      - '\CSFalconService.exe'
+      - '\SenseIR.exe'
+      - '\MsSense.exe'
+      - '\taskmgr.exe'
+  condition: selection and not filter_baseline
+falsepositives:
+  - EDR / AV vendor agents not in the baseline list
+  - Sysinternals tools run by admins on consenting hosts
+  - Vulnerability scanners performing credential checks
+level: high
+
+custom:
+  origin_hypothesis: H-002
+  confidence: Medium
+  expected_noise: "1-5 alerts/day per 1k endpoints after baseline"

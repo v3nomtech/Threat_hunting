@@ -1,0 +1,71 @@
+id: H-007
+title: Process created suspended then has its primary image mapped from another process
+
+tactic: TA0005
+technique: T1055
+sub_technique: .012
+
+status: Draft
+author: v3nomtech
+created: 2026-05-06
+last_updated: 2026-05-06
+
+confidence: Medium
+priority: P3
+
+data_sources:
+  - Sysmon (Event ID 7 — image loaded, with original file name)
+  - EDR memory / section-mapping telemetry (vendor-specific)
+  - Windows Security Log (4688)
+
+hypothesis: |
+  If an adversary is hollowing a process (T1055.012), we should observe:
+    1. A child process created in suspended state by a parent that does
+       not normally spawn it (e.g. powershell.exe → svchost.exe), AND
+    2. The image loaded into the child's main module having a different
+       OriginalFileName than the on-disk binary, OR a section mapped
+       into the child from a writable region in the parent.
+  Most EDRs surface this as a "process hollowing" or "image swap" event.
+
+hunt_query:
+  language: EQL
+  query: |
+    sequence by host.id with maxspan=30s
+      [process where event.type == "start"
+         and process.name in ("svchost.exe", "explorer.exe", "notepad.exe",
+                              "RegAsm.exe", "AddInProcess.exe")
+         and process.parent.name in ("powershell.exe", "cmd.exe",
+                                    "wscript.exe", "cscript.exe")]
+      [library where event.action == "load"
+         and process.pe.original_file_name != file.name]
+
+expected_results: |
+  Unknown — Draft hypothesis. Suspected very low rate (<1/week) in a
+  clean estate. Most legitimate suspended-process creation comes from
+  debuggers and installers and is short-lived.
+
+known_false_positives:
+  - Debuggers (windbg, visual studio) attaching to a target
+  - .NET ngen / crossgen rebasing native images
+  - Some packers used by legitimate software (rare but present)
+
+pivots:
+  - Diff the on-disk binary against the in-memory image (size, sections, entropy)
+  - Was the parent process recently created? By whom?
+  - Network behavior of the hollowed process — does it match the impersonated identity?
+  - Memory dump of the suspect region for IOC extraction
+
+hunt_log:
+  - date: 2026-05-06
+    outcome: Drafted. Pending EDR field mapping verification.
+    notes: |
+      Need to confirm `process.pe.original_file_name` vs file.name is
+      reliably populated by our agent before going live.
+
+references:
+  - https://attack.mitre.org/techniques/T1055/012/
+  - https://www.elastic.co/security-labs/process-hollowing
+  - https://attack.mitre.org/datasources/DS0017/
+
+graduated_to:
+  # - rules/elastic/process-hollowing-image-swap.toml

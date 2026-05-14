@@ -1,0 +1,69 @@
+id: H-002
+title: LSASS handle access from a non-baseline parent process
+
+tactic: TA0006
+technique: T1003
+sub_technique: .001
+
+status: Hunting
+author: v3nomtech
+created: 2026-04-18
+last_updated: 2026-05-10
+
+confidence: Medium
+priority: P2
+
+data_sources:
+  - Sysmon (Event ID 10 — ProcessAccess)
+  - Windows Security Log (4663 with LSASS handle)
+  - EDR memory-access telemetry
+
+hypothesis: |
+  If an adversary is dumping credentials from LSASS (T1003.001), we should
+  observe a ProcessAccess event targeting lsass.exe with a GrantedAccess mask
+  containing 0x10 (VM_READ) or 0x400 (QUERY_INFORMATION), where the calling
+  process is NOT on the baseline list (csrss, wininit, services, MsMpEng,
+  CSFalconService, etc.). Living-off-the-land binaries like rundll32.exe,
+  comsvcs.dll, or signed-but-unusual processes warrant immediate triage.
+
+hunt_query:
+  language: EQL
+  query: |
+    process where event.category == "process" and event.action == "process_access"
+      and process.target.name : "lsass.exe"
+      and (process.access.mask : "0x1010" or process.access.mask : "0x1410")
+      and not process.name : ("csrss.exe", "wininit.exe", "services.exe",
+                              "MsMpEng.exe", "CSFalconService.exe", "SenseIR.exe")
+
+expected_results: |
+  In a 1k-endpoint estate: ~10-30 events/day, almost entirely from EDR
+  agents and Windows internals. Anything from rundll32, powershell, or
+  cmd is investigation-worthy on first sight.
+
+known_false_positives:
+  - EDR vendor agents (CrowdStrike, Defender, SentinelOne)
+  - Sysinternals tools run by admins (procexp, procdump on consenting hosts)
+  - Vulnerability scanners with credential checks
+
+pivots:
+  - Parent process tree of the accessor
+  - Loaded modules in the accessing process (look for comsvcs.dll, dbghelp.dll)
+  - File creations in the surrounding 5 minutes (dump files)
+  - Network egress from the host within 1h
+  - User session — interactive vs. service
+
+hunt_log:
+  - date: 2026-04-18
+    outcome: Baseline established. ~20 events/day, all expected sources.
+    notes: Excluded CrowdStrike, Defender, and 2 internal IT scripts.
+  - date: 2026-05-10
+    outcome: 0 anomalies in 30 days. Confidence lowered to Medium.
+    notes: Considering a tighter variant focused on rundll32+comsvcs combo.
+
+references:
+  - https://attack.mitre.org/techniques/T1003/001/
+  - https://www.elastic.co/security-labs/detect-credential-access
+  - https://redcanary.com/blog/threat-hunting-lsass/
+
+graduated_to:
+  # - rules/elastic/lsass-access-unusual-parent.toml

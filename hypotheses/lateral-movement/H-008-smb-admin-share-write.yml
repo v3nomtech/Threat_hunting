@@ -1,0 +1,70 @@
+id: H-008
+title: Remote write to ADMIN$ or C$ followed by service or scheduled-task creation
+
+tactic: TA0008
+technique: T1021
+sub_technique: .002
+
+status: Hunting
+author: v3nomtech
+created: 2026-04-12
+last_updated: 2026-05-07
+
+confidence: High
+priority: P2
+
+data_sources:
+  - Windows Security Log (5145 — file share access, 4688, 7045)
+  - Sysmon (Event ID 11 — file create over network)
+  - Zeek smb_files.log
+
+hypothesis: |
+  If an adversary is moving laterally via SMB admin shares (T1021.002 —
+  PsExec / Impacket-style), we should observe within ~2 minutes on the
+  target host:
+    1. A file write under \\<host>\ADMIN$ or C$ from a non-baseline
+       remote IP / user, FOLLOWED by
+    2. A new service creation (4697 / 7045) OR scheduled task creation
+       (4698) referencing that file.
+  The temporal sequence is the strong signal; either event alone is noisy.
+
+hunt_query:
+  language: EQL
+  query: |
+    sequence by host.id with maxspan=2m
+      [file where event.action == "creation"
+         and file.path : ("\\\\*\\ADMIN$\\*", "\\\\*\\C$\\*")
+         and not user.name : ("*$", "SYSTEM")]
+      [process where event.action == "service-installed"
+         or event.code == "4698"]
+
+expected_results: |
+  ~0-3 events/day per 1k endpoints. SCCM and remote-management tools
+  occasionally trigger this pattern; they are predictable and allowlistable.
+
+known_false_positives:
+  - SCCM / Intune client push installs
+  - Remote management (PSRemoting with explicit service deploy)
+  - Admin-driven PsExec from a jump host (should be tracked separately)
+
+pivots:
+  - Source IP — is it a known admin / jump host?
+  - User account — was it logged on interactively somewhere first?
+  - The service / task binary — does it match a known-good tool?
+  - Outbound from the target host after the new service starts
+
+hunt_log:
+  - date: 2026-04-12
+    outcome: Baseline established. Allowlisted 3 SCCM source hosts.
+    notes: Tightened maxspan from 5m → 2m to reduce noise.
+  - date: 2026-05-07
+    outcome: 1 true positive — purple team using Impacket smbexec.
+    notes: Detection fired in 45s. Recommend promoting to rule.
+
+references:
+  - https://attack.mitre.org/techniques/T1021/002/
+  - https://www.elastic.co/security-labs/detecting-lateral-movement
+  - https://www.thehacker.recipes/ad/movement/smb/psexec
+
+graduated_to:
+  # - rules/elastic/smb-admin-share-write-service-install.toml

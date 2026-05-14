@@ -1,0 +1,73 @@
+id: H-011
+title: Large outbound transfer to a rarely-seen ASN over a non-business port
+
+tactic: TA0010
+technique: T1041
+sub_technique:
+
+status: Hunting
+author: v3nomtech
+created: 2026-04-25
+last_updated: 2026-05-06
+
+confidence: Medium
+priority: P2
+
+data_sources:
+  - Zeek conn.log (or Packetbeat flows)
+  - Firewall / proxy logs with bytes-out fields
+  - GeoIP + ASN enrichment in Elastic
+
+hypothesis: |
+  If an adversary is exfiltrating data over C2 (T1041) or an alternate
+  protocol, we should observe a host generating ≥50MB of outbound traffic
+  to a destination ASN that:
+    (a) has appeared <0.5% of the time in the last 30 days for this org, AND
+    (b) is reached over a port other than 80/443/53.
+  The combined ASN-rarity + port-rarity filters out most cloud / SaaS
+  exfil noise and surfaces the long-tail tunnels.
+
+hunt_query:
+  language: ESQL
+  query: |
+    FROM logs-network.flows-*
+    | WHERE @timestamp > NOW() - 1 day
+      AND destination.bytes > 50000000
+      AND NOT destination.port IN (80, 443, 53, 8080, 8443)
+    | STATS total_bytes = SUM(destination.bytes), flows = COUNT(*)
+        BY source.ip, destination.as.number, destination.port
+    | SORT total_bytes DESC
+    | LIMIT 50
+
+expected_results: |
+  ~2-10 candidates/day per 1k endpoints. Most are SaaS backups, video
+  conferencing, or media uploads on unusual ports — quickly triaged
+  with allowlist + user / host context.
+
+known_false_positives:
+  - Cloud backup agents pinned to a specific port (Veeam, Acronis)
+  - Video conferencing using UDP on dynamic ports
+  - CI / artifact uploads to internal mirrors with public IPs
+  - Steam / game updaters on home / VPN-routed traffic
+
+pivots:
+  - Process on the source host responsible for the bytes (correlate to endpoint)
+  - Historical rarity of the destination IP (passive DNS, internal first-seen)
+  - TLS SNI / JA3 — does it match the supposed service?
+  - Did the same host beacon to the same ASN in the preceding 24h?
+
+hunt_log:
+  - date: 2026-04-25
+    outcome: Baseline established. Allowlisted 4 SaaS backup destinations.
+    notes: Built ASN-frequency lookup over 30d window.
+  - date: 2026-05-06
+    outcome: 0 anomalies. 1 candidate was a developer testing rclone.
+    notes: Notable that rclone surfaced — good sign the hunt works.
+
+references:
+  - https://attack.mitre.org/techniques/T1041/
+  - https://www.elastic.co/security-labs/hunting-c2-and-exfil
+  - https://www.sans.org/posters/hunt-evil/
+
+graduated_to:
+  # - rules/elastic/large-outbound-rare-asn.toml
