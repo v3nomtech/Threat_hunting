@@ -1,0 +1,70 @@
+id: H-001
+title: WMI event subscription used for persistence by non-standard process
+
+tactic: TA0003
+technique: T1546
+sub_technique: .003
+
+status: Productionized
+author: v3nomtech
+created: 2026-04-10
+last_updated: 2026-05-01
+
+confidence: High
+priority: P2
+
+data_sources:
+  - Sysmon (Event ID 19, 20, 21 — WMI subscription events)
+  - Windows Security Log (4688)
+  - EDR process telemetry
+
+hypothesis: |
+  If an adversary is establishing persistence via WMI event subscriptions
+  (T1546.003), we should observe creation of __EventFilter / __EventConsumer /
+  __FilterToConsumerBinding objects from a process that is NOT one of the
+  expected baseline binaries (wmiprvse.exe spawned by services.exe,
+  mofcomp.exe during installs). Anomalies in the creating process or in the
+  consumer command line are high-confidence signal.
+
+hunt_query:
+  language: EQL
+  query: |
+    sequence by host.id with maxspan=5m
+      [process where process.name in ("powershell.exe", "wmic.exe", "cscript.exe", "wscript.exe")]
+      [registry where event.action == "modification" and
+        registry.path like "*\\Software\\Microsoft\\Wbem\\CIMOM\\*"]
+
+expected_results: |
+  In a 1k-endpoint estate: ~2-8 events/day from SCCM, EDR vendor agents, and
+  scheduled health checks. Anything outside that baseline is investigation-worthy.
+
+known_false_positives:
+  - SCCM client (`ccmexec.exe`) creating health-check subscriptions
+  - EDR / DLP agents installing their own consumers at deploy time
+  - Admin-run PowerShell scripts auditing WMI subscriptions
+
+pivots:
+  - Parent process tree of the creator
+  - Command line of the EventConsumer (often reveals the payload)
+  - User context — system vs. interactive
+  - Network connections from the host in the surrounding hour
+  - File creations under %TEMP% / %APPDATA% by the same process
+
+hunt_log:
+  - date: 2026-04-10
+    outcome: Baseline established. 0 anomalies in 7 days.
+    notes: Excluded ccmexec.exe and CrowdStrike agent.
+  - date: 2026-04-22
+    outcome: 1 true positive — red team exercise using Empire's WMI module.
+    notes: Detection fired within 90 seconds of subscription creation.
+  - date: 2026-05-01
+    outcome: Graduated to production detection.
+    notes: Tuned 1 FP source (legacy patching script in finance OU).
+
+references:
+  - https://attack.mitre.org/techniques/T1546/003/
+  - https://www.elastic.co/security-labs/hunting-for-persistence-using-elastic-security-part-1
+  - https://www.fireeye.com/blog/threat-research/2019/05/wmi-vs-wmi-monitoring-wmi-malicious-uses.html
+
+graduated_to:
+  - rules/elastic/wmi-event-subscription-persistence.toml
