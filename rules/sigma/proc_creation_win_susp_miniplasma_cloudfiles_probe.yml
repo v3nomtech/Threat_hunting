@@ -1,0 +1,60 @@
+title: Potential MiniPlasma CloudFiles Privilege Escalation Probe
+id: b3f1a2c4-9d8e-4f5a-8b6c-7d8e9f0a1b2c
+related:
+    - id: 8e0b2fd3-7e5d-4f58-a8d2-1a2b3c4d5e6f
+      type: similar
+status: experimental
+description: |
+    Detects PowerShell- or cmd-launched processes whose command line contains
+    indicators of MiniPlasma (CVE-2020-17103) probing or scanning activity
+    against the Windows Cloud Files Mini Filter Driver (cldflt.sys), including
+    strings emitted by the Nessus/Tenable plugin 316497 and public PoC
+    references. Generic PowerShell obfuscation primitives only fire when paired
+    with a CloudFiles reference to reduce false positives from benign tooling.
+    This rule targets reconnaissance/scanning activity; the registry-write
+    exploitation primitive is covered by the related rule
+    (id 8e0b2fd3-7e5d-4f58-a8d2-1a2b3c4d5e6f).
+references:
+    - https://www.tenable.com/plugins/nessus/316497
+    - https://www.threatlocker.com/blog/miniplasma-windows-privilege-escalation-zero-day-affects-fully-patched-systems
+    - https://github.com/Nightmare-Eclipse/MiniPlasma
+author: v3nomtech
+date: 2026/05/24
+tags:
+    - attack.execution
+    - attack.t1059.001
+    - attack.discovery
+    - attack.t1518.001
+    - cve.2020-17103
+logsource:
+    category: process_creation
+    product: windows
+detection:
+    parent_shell:
+        ParentImage|endswith:
+            - '\cmd.exe'
+            - '\powershell.exe'
+    selection_high_conf_strings:
+        CommandLine|contains:
+            - 'MiniPlasmaProbe'
+            - 'MINIPLASMA_VULNERABLE'
+            - 'MINIPLASMA_PATCHED'
+            - 'cldflt.sys'
+            - 'SeRestorePrivilege'
+            - 'SeBackupPrivilege'
+    selection_high_conf_registry:
+        CommandLine|contains: 'HKEY_USERS\.DEFAULT\Software\Policies\Microsoft\CloudFiles'
+    selection_target_anchor:
+        CommandLine|contains: 'CloudFiles'
+    selection_generic_obfuscation:
+        CommandLine|contains:
+            - 'Add-Type'
+            - 'FromBase64String'
+            - 'IO.Compression.GzipStream'
+    condition: parent_shell and (1 of selection_high_conf_* or (selection_target_anchor and selection_generic_obfuscation))
+falsepositives:
+    - Authorized Tenable Nessus vulnerability scans (plugin 316497)
+    - Internal security validation tooling and purple-team exercises
+    - Security research and testing labs
+    - Legitimate CloudFiles / OneDrive administration scripts (partially mitigated by the obfuscation pairing requirement)
+level: medium

@@ -1,0 +1,38 @@
+title: MiniPlasma CloudFiles Privilege Escalation Primitive (CVE-2020-17103)
+id: 8e0b2fd3-7e5d-4f58-a8d2-1a2b3c4d5e6f
+status: experimental
+description: |
+    Detects the registry-write primitives used by the MiniPlasma local
+    privilege escalation exploit (CVE-2020-17103) against the Windows
+    Cloud Files Mini Filter Driver (cldflt.sys). The exploit redirects
+    the WER QueueReporting scheduled task to execute an attacker-controlled
+    binary as SYSTEM by writing the 'windir' value under
+    HKU\.DEFAULT\Volatile Environment, and may also manipulate CloudFiles
+    BlockedApps policy keys during execution. Neither location is written
+    by legitimate software, so any match is highly suspicious.
+references:
+    - https://github.com/Nightmare-Eclipse/MiniPlasma
+    - https://www.threatlocker.com/blog/miniplasma-windows-privilege-escalation-zero-day-affects-fully-patched-systems
+    - https://msrc.microsoft.com/update-guide/vulnerability/CVE-2020-17103
+    - https://www.bleepingcomputer.com/news/microsoft/new-windows-miniplasma-zero-day-exploit-gives-system-access-poc-released/
+    - https://www.tenable.com/plugins/nessus/316497
+author: v3nomtech
+date: 2026/05/24
+tags:
+    - attack.privilege_escalation
+    - attack.t1068
+    - attack.defense_evasion
+    - attack.t1112
+    - cve.2020-17103
+logsource:
+    category: registry_set
+    product: windows
+detection:
+    selection_windir_hijack:
+        TargetObject|contains: '\.DEFAULT\Volatile Environment\windir'
+    selection_cloudfiles_blockedapps:
+        TargetObject|contains: '\Software\Policies\Microsoft\CloudFiles\BlockedApps'
+    condition: 1 of selection_*
+falsepositives:
+    - Unknown — no legitimate software is expected to write either of these registry locations. Investigate any hit.
+level: high
