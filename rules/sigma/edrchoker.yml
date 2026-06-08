@@ -1,0 +1,15 @@
+title: Detection of EDRChoker Execution
+logsource:
+    category: process_creation
+    product: windows
+detection:
+    selection:
+        Image|endswith: '\\edrchoker.exe'
+    selection_cli:
+        CommandLine|contains: 'edrchoker.exe'
+    condition: selection or selection_cli
+level: high
+status: experimental
+description: Detects the presence of edrchoker.exe via process name or command line arguments.
+tags:
+    - attack.execution
